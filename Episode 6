@@ -1,0 +1,186 @@
+package com.mime.minefront;
+
+import java.awt.Canvas;
+import java.awt.Graphics;
+import java.awt.image.BufferStrategy;
+import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
+
+import javax.swing.JFrame;
+
+import com.mime.minefront.graphics.Render;
+import com.mime.minefront.graphics.Screen;
+
+public class Display extends Canvas implements Runnable{
+	private static final long serialVersionUID = 1L;
+	
+	// window
+	public static final int WIDTH = 800;
+	public static final int HEIGHT = 600;
+	public static final String TITLE = "Metroid Fusion 3D";
+
+	// adding tread
+	private Thread thread;
+	private Screen screen;
+	private BufferedImage img;
+	private Render render;
+	private boolean running = false;
+	private int[] pixels;
+	
+	public Display(){
+		screen = new Screen(WIDTH, HEIGHT);
+		img = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
+		pixels = ((DataBufferInt)img.getRaster().getDataBuffer()).getData();
+	}
+
+	private void start(){
+		if(running)
+			return;
+		running = true;
+		thread = new Thread(this);
+		thread.start(); 
+		
+		System.out.println("working");
+	}
+	
+	private void stop(){
+		if(!running)
+			return;
+		running = false;
+		try{
+			thread.join();
+		} catch(Exception e){
+			e.printStackTrace();
+			System.exit(0);
+		}
+	}
+	
+	public void run(){
+		while(running){
+			tick();
+			render();
+		}
+	}
+	
+	private void tick(){
+		
+	}
+	
+	
+	private void render(){
+		BufferStrategy bs = this.getBufferStrategy();
+		//starts buffer ones
+		if(bs == null){
+			createBufferStrategy(3);
+			return;
+		}
+		
+		screen.render();
+		
+		for(int i = 0; i< WIDTH * HEIGHT; i++){
+			pixels[i] = screen.pixels[i];
+		}
+		
+		Graphics g = bs.getDrawGraphics();
+		/*
+		 * to make random colors show up
+		//g.drawImage(img, 0, 0, WIDTH * 20, HEIGHT * 20, null);
+		 * 
+		 */
+		g.drawImage(img, 0, 0, WIDTH, HEIGHT, null);
+		g.dispose();
+		bs.show();
+	}
+
+	public static void main(String[] args) {
+		Display game = new Display();
+		JFrame frame = new JFrame();
+		frame.add(game);
+		frame.pack();
+		frame.setTitle(TITLE);
+		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		frame.setSize(WIDTH, HEIGHT);
+		frame.setLocationRelativeTo(null);
+		frame.setResizable(false);
+		frame.setVisible(true);
+
+		// for debugging perpuse
+		System.out.println("Running...");
+		game.start();
+	}
+
+}
+
+
+package com.mime.minefront.graphics;
+
+import com.mime.minefront.Display;
+
+public class Render {
+	public final int width;
+	public final int height;
+	public final int[] pixels;
+	
+	private Display display;
+	
+	public Render(int width, int height){
+		this.width = width;
+		this.height = height;
+		pixels = new int[width * height];
+	}
+
+	public void draw(Render render, int xOffset, int yOffset){
+		for(int y = 0; y < render.height; y++){
+			int yPix = y + yOffset;
+			//fixing outOfBounce
+			if(yPix < 0 || yPix >= display.HEIGHT){ continue; }
+			for(int x = 0; x< render.width; x++){
+				int xPix = x + xOffset;
+				
+				if(xPix < 0 || xPix >= display.WIDTH){ continue;}
+				
+				
+				int alpha = render.pixels[x + y * render.width];
+				if(alpha < 0){pixels[xPix + yPix * width] = alpha; }
+				
+			}
+			
+		}
+			
+	}
+		
+}
+
+
+package com.mime.minefront.graphics;
+
+import java.util.Random;
+
+public class Screen extends Render {
+	
+	private Render test;
+	
+	public Screen(int width, int height){
+		super(width, height);
+		Random random = new Random();
+		test = new Render(256, 256);
+		for(int i=0 ; i< 256*256; i++){
+			test.pixels[i] = random.nextInt();
+		}
+	}
+	
+	public void render(){
+		//clean background of object
+		for(int i = 0; i< width * height; i++){
+			pixels[i] = 0;
+		}
+		for(int i = 0; i < 100; i++){
+			int anim = (int)(Math.sin((System.currentTimeMillis() + i * 4) %
+						2000.0 / 2000 * Math.PI * 2) * 200);
+			int anim2 = (int)(Math.cos((System.currentTimeMillis() + i * 4) %
+						2000.0 / 2000 * Math.PI * 2) * 200);
+			draw(test, (width - 256)/2 + anim, (height - 256)/2 + anim2);
+			//draw(test, 0, 0);
+		}
+	} 
+}
