@@ -1,0 +1,426 @@
+package com.mime.minefront;
+
+import java.awt.Canvas;
+import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.image.BufferStrategy;
+import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
+
+import javax.swing.JFrame;
+
+import com.mime.minefront.graphics.Render;
+import com.mime.minefront.graphics.Screen;
+import com.mime.minefront.input.InputHandler;
+
+public class Display extends Canvas implements Runnable{
+	private static final long serialVersionUID = 1L;
+	
+	// window
+	public static final int WIDTH = 800;
+	public static final int HEIGHT = 600;
+	public static final String TITLE = "Metroid Fusion 3D";
+
+	// adding tread
+	private Thread thread;
+	private Screen screen;
+	private BufferedImage img;
+	private Game game;
+	private Render render;
+	private boolean running = false;
+	private int[] pixels;
+	
+	private InputHandler input;
+	
+	public Display(){
+		Dimension size = new Dimension(WIDTH, HEIGHT);
+		setPreferredSize(size);
+		setMinimumSize(size);
+		setMaximumSize(size);
+		screen = new Screen(WIDTH, HEIGHT);
+		game = new Game();
+		img = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
+		pixels = ((DataBufferInt)img.getRaster().getDataBuffer()).getData();
+		
+		input = new InputHandler();
+		addFocusListener(input);
+		addKeyListener(input);
+		addMouseListener(input);
+		addMouseMotionListener(input);
+	}
+
+	private void start(){
+		if(running)
+			return;
+		running = true;
+		thread = new Thread(this);
+		thread.start(); 
+		
+		//System.out.println("working");
+	}
+	
+	private void stop(){
+		if(!running)
+			return;
+		running = false;
+		try{
+			thread.join();
+		} catch(Exception e){
+			e.printStackTrace();
+			System.exit(0);
+		}
+	}
+	
+	//making frame counter
+	public void run(){
+		int frames = 0;
+		double unprocessedSeconds = 0;
+		long previousTime = System.nanoTime();
+		double secondsPerTick = 1 / 60.0;
+		int tickCount = 0;
+		boolean ticked = false;
+		
+		while(running){
+			long currenTime = System.nanoTime();
+			long passedTime = currenTime - previousTime;
+			previousTime = currenTime;
+			unprocessedSeconds += passedTime / 1000000000.0;
+			
+			while(unprocessedSeconds > secondsPerTick){
+				tick();
+				unprocessedSeconds -= secondsPerTick;
+				ticked = true;
+				tickCount++;
+				if(tickCount % 60 == 0){
+					System.out.println(frames + "fps");
+					previousTime += 1000;
+					frames = 0;
+				}
+				
+			}
+			
+			if(ticked){render(); frames++; }
+		}
+	}
+	
+	private void tick(){
+		game.tick(input.key);
+	}
+	
+	
+	private void render(){
+		BufferStrategy bs = this.getBufferStrategy();
+		//starts buffer ones
+		if(bs == null){
+			createBufferStrategy(3);
+			return;
+		}
+		
+		screen.render(game);
+		
+		for(int i = 0; i< WIDTH * HEIGHT; i++){
+			pixels[i] = screen.pixels[i];
+		}
+		
+		Graphics g = bs.getDrawGraphics();
+		g.drawImage(img, 0, 0, WIDTH + 10, HEIGHT + 10, null);
+		g.dispose();
+		bs.show();
+	}
+
+	public static void main(String[] args) {
+		Display game = new Display();
+		JFrame frame = new JFrame();
+		frame.add(game);
+		frame.pack();
+		frame.setTitle(TITLE);
+		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		frame.setLocationRelativeTo(null);
+		frame.setResizable(false);
+		frame.setVisible(true);
+		
+		game.start();
+	}
+
+}
+
+package com.mime.minefront;
+
+import java.awt.event.KeyEvent;
+
+import com.mime.minefront.input.Controller;
+
+public class Game {
+	public int time;
+	public Controller controls;
+	
+	public Game(){
+		controls = new Controller();
+	}
+	
+	public void tick(boolean[] key){ 
+		time++;
+		boolean forward = key[KeyEvent.VK_W];
+		boolean back = key[KeyEvent.VK_S];
+		boolean left = key[KeyEvent.VK_A];
+		boolean right = key[KeyEvent.VK_D];
+		boolean turnLeft = key[KeyEvent.VK_LEFT];
+		boolean turnRight = key[KeyEvent.VK_RIGHT];
+		
+		controls.tick(forward, back, left, right, turnLeft, turnRight);
+	}
+
+}
+
+package com.mime.minefront.graphics;
+
+public class Render {
+	public final int width;
+	public final int height;
+	public final int[] pixels;
+	
+	public Render(int width, int height){
+		this.width = width;
+		this.height = height;
+		pixels = new int[width * height];
+	}
+
+	public void draw(Render render, int xOffset, int yOffset){
+		for(int y = 0; y < render.height; y++){
+			int yPix = y + yOffset;
+			if(yPix < 0 || yPix >= height){ 
+				continue;
+			}
+			
+			for(int x = 0; x< render.width; x++){
+				int xPix = x + xOffset;
+	
+				if(xPix < 0 || xPix >= width){ 
+					continue;
+				}
+				
+				int alpha = render.pixels[x + y * render.width];
+				if(alpha > 0){ //fix for famous black screen error
+					pixels[xPix + yPix * width] = alpha;
+				}
+				
+			}
+			
+		}
+		
+		
+	}
+	
+	
+}
+
+package com.mime.minefront.graphics;
+
+import com.mime.minefront.Game;
+
+public class Render3D extends Render {
+	
+	public Render3D(int width, int height){ super(width, height); }
+	
+	public void floor(Game game){
+		
+		double floorPosition = 8;
+		double ceilingPosition = 8000;
+		double forward = game.controls.z;
+		double right = game.controls.x;
+		
+		double rotation = game.controls.rotation;
+		double cosine = Math.cos(rotation);
+		double sine = Math.sin(rotation);
+		
+		for(int y = 0; y < height; y++){
+			double ceiling = (y + -height / 2.0) / height;
+			
+			double z = floorPosition / ceiling;
+			if(ceiling < 0){ ceilingPosition = -ceiling; }
+			
+			for(int x = 0; x < width; x++){
+				double  xDepth = (x - width / 2.0) / height;
+				xDepth *= z;
+				double xx = xDepth * cosine + z * sine; 
+				double yy = z * cosine  - xDepth * sine;
+				int xPix = (int)(xx + right);
+				int yPix = (int)(yy + forward);
+				pixels[x + y * width] = ((xPix & 15) * 16) | ((yPix & 15) * 15) <<8;
+			}
+		}
+	}
+
+}
+
+package com.mime.minefront.graphics;
+
+import java.util.Random;
+
+import com.mime.minefront.Game;
+
+public class Screen extends Render {
+	
+	private Render test;
+	private Render3D render;
+	
+	public Screen(int width, int height){
+		super(width, height);
+		Random random = new Random();
+		render = new Render3D(width, height);
+		test = new Render(256, 256);
+		for(int i=0 ; i< 256*256; i++){
+			test.pixels[i] = random.nextInt() * (random.nextInt(5)/4);
+		}
+	}
+	
+	public void render(Game game){
+		for(int i = 0; i< width * height; i++){ 
+			pixels[i] = 0;
+		}
+		
+		render.floor(game);
+		draw(render, 0, 0);
+		
+	} 
+}
+
+package com.mime.minefront.input;
+
+public class Controller {
+	
+	public double x, z, rotation, xa, za, rotationa;
+	public void tick(boolean forward, boolean back, boolean left, boolean right, boolean turnLeft, boolean turnRight){
+		
+		double rotationSpeed = 0.01;
+		double walkSpeed = 1;
+		double xMove = 0;
+		double zMove = 0;
+		
+		if(forward){
+			zMove++;
+		}
+		if(back){
+			zMove--;
+		}
+		if(left){
+			xMove--;
+		}
+		if(right){
+			xMove++;
+		}
+		if(turnLeft){
+			rotationa -= rotationSpeed;
+		}
+		if(turnRight){
+			rotationa += rotationSpeed;
+		}
+		
+		xa +=(xMove * Math.cos(rotation) + zMove * Math.sin(rotation) * walkSpeed);
+		za +=(zMove * Math.cos(rotation) - xMove * Math.sin(rotation) * walkSpeed);
+		
+		x+= xa;
+		z += za;
+		xa *= 0.1;
+		za *= 0.1;
+		rotation += rotationa;
+		rotationa *= 0.8;
+		
+	}
+}
+
+
+package com.mime.minefront.input;
+
+import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
+
+public class InputHandler implements KeyListener, FocusListener, MouseListener,MouseMotionListener {
+	
+	public boolean[] key = new boolean[68836];
+	@Override
+	public void mouseDragged(MouseEvent e) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void mouseMoved(MouseEvent e) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void mouseClicked(MouseEvent e) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void mouseEntered(MouseEvent e) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void mouseExited(MouseEvent e) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void mousePressed(MouseEvent e) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void mouseReleased(MouseEvent e) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void focusGained(FocusEvent e) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void focusLost(FocusEvent e) {
+		for(int i = 0; i< key.length; i++){
+			key[i] = false;
+		}
+		
+	}
+
+	@Override
+	public void keyPressed(KeyEvent e) {
+		int keyCode = e.getKeyCode();
+		if(keyCode > 0 && keyCode < key.length){
+			key[keyCode] = true;
+		}
+		
+	}
+
+	@Override
+	public void keyReleased(KeyEvent e) {
+		int keyCode = e.getKeyCode();
+		if(keyCode > 0 && keyCode < key.length){
+			key[keyCode] = false;
+		}
+		
+	}
+
+	@Override
+	public void keyTyped(KeyEvent e) {
+		// TODO Auto-generated method stub
+		
+	}
+
+}
